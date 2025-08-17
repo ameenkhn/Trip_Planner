@@ -1,414 +1,542 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import "./App.css";
 
-function StarRating({ rating }) {
-  const stars = Math.round(Number(rating)) || 0;
-  return (
-    <span style={{ color: '#f5c518', fontSize: 16 }}>
-      {'★'.repeat(stars)}
-      <span style={{ color: '#ddd' }}>{'★'.repeat(5 - stars)}</span>
-      {stars === 0 && <span style={{ color: "#999" }}> No rating</span>}
-    </span>
-  );
-}
-function Spinner() {
-  return (
-    <div style={{
-      textAlign: "center", margin: "24px 0",
-      display: "flex", justifyContent: "center"
-    }}>
-      <div className="lds-dual-ring"></div>
-      <style>{`
-        .lds-dual-ring {
-          display: inline-block;
-          width: 36px;
-          height: 36px;
-        }
-        .lds-dual-ring:after {
-          content: " ";
-          display: block;
-          width: 28px;
-          height: 28px;
-          margin: 4px;
-          border-radius: 50%;
-          border: 4px solid #008cff;
-          border-color: #008cff transparent #008cff transparent;
-          animation: lds-dual-ring 1.2s linear infinite;
-        }
-        @keyframes lds-dual-ring {
-          0% { transform: rotate(0deg);}
-          100% { transform: rotate(360deg);}
-        }
-      `}</style>
-    </div>
-  );
-}
+export default function App() {
+  const [theme, setTheme] = useState("light");
+  useEffect(() => {
+    document.body.className = theme;
+  }, [theme]);
 
-const DEFAULT_HOTEL_IMG = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=60";
-
-function App() {
-  const [flightType, setFlightType] = useState('oneway'); 
+  // ===== Flights state =====
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
+  const [departureDate, setDepartureDate] = useState("");
+  const [returnDate, setReturnDate] = useState("");
+  const [flightAdults, setFlightAdults] = useState(1);
+  const [flightChildren, setFlightChildren] = useState(0);
   const [flightResults, setFlightResults] = useState([]);
   const [returnResults, setReturnResults] = useState([]);
-  const [loadingFlight, setLoadingFlight] = useState(false);
-  const [flightForm, setFlightForm] = useState({ adults: 1, children: 0 });
+  const [loadingFlights, setLoadingFlights] = useState(false);
+  const [flightError, setFlightError] = useState("");
+  const [tripType, setTripType] = useState("one_way");
 
-  const [fullHotelList, setFullHotelList] = useState([]);
-  const [hotelOffers, setHotelOffers] = useState([]);
-  const [loadingHotels, setLoadingHotels] = useState(false);
+  // ===== Hotels state =====
+  const [hotelSearchMode, setHotelSearchMode] = useState("city"); // "city" | "name"
+  const [hotelCity, setHotelCity] = useState("");
+  const [hotelName, setHotelName] = useState("");
+  const [checkInDate, setCheckInDate] = useState("");
+  const [checkOutDate, setCheckOutDate] = useState("");
+  const [hotelAdults, setHotelAdults] = useState(2);
+  const [hotelChildren, setHotelChildren] = useState(0);
+  const [childrenAges, setChildrenAges] = useState("");
+  const [hotelResults, setHotelResults] = useState([]);
+  const [loadingHotel, setLoadingHotel] = useState(false);
+  const [hotelError, setHotelError] = useState("");
 
-  const [error, setError] = useState('');
+  // ===== Popular Destinations (Klook) state =====
+  const [popular, setPopular] = useState([]);
+  const [loadingPopular, setLoadingPopular] = useState(false);
+  const [popularError, setPopularError] = useState("");
 
-  function handleFlightFormChange(e) {
-    const { name, value } = e.target;
-    setFlightForm(form => ({ ...form, [name]: value }));
-  }
+  const fmt = (iso) =>
+    iso
+      ? new Date(iso).toLocaleString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
 
-  async function searchFlights(e) {
+  // ===== Flights search =====
+  async function handleFlightSearch(e) {
     e.preventDefault();
-    setError('');
-    setLoadingFlight(true);
-
+    setFlightError("");
     setFlightResults([]);
     setReturnResults([]);
-
-    const origin = e.target.origin.value.trim().toUpperCase();
-    const destination = e.target.destination.value.trim().toUpperCase();
-    const departureDate = e.target.departureDate.value;
-    const returnDate = flightType === 'roundtrip' ? e.target.returnDate.value : '';
-    const adults = Number(flightForm.adults) || 1;
-    const children = Number(flightForm.children) || 0;
-
-    if (!origin || !destination || !departureDate) {
-      setError('Please fill all required flight search fields.');
-      setLoadingFlight(false);
-      return;
-    }
-
-    if (flightType === "oneway") {
-      try {
-        const res = await axios.get('http://localhost:5000/api/flights', {
-          params: { origin, destination, departureDate, adults, children }
-        });
-        const flights = res.data.data || [];
-        setFlightResults(flights.slice(0, 10));
-      } catch (err) {
-        setError('Flight fetch failed: ' + (err.response?.data?.error || err.message));
-      }
-      setLoadingFlight(false);
-      return;
-    }
-
-    if (flightType === "roundtrip") {
-      if (!returnDate) {
-        setError('Return date required for round trips.');
-        setLoadingFlight(false);
+    setLoadingFlights(true);
+    try {
+      if (!origin || !destination || !departureDate) {
+        setFlightError("Please provide origin, destination and departure date.");
+        setLoadingFlights(false);
         return;
       }
-      if (returnDate < departureDate) {
-        setError('Return date cannot be before departure date.');
-        setLoadingFlight(false);
-        return;
+      const params = {
+        origin: origin.trim().toUpperCase(),
+        destination: destination.trim().toUpperCase(),
+        departureDate,
+        adults: flightAdults,
+        children: flightChildren,
+        tripType,
+      };
+      if (tripType === "round_trip") {
+        if (!returnDate) {
+          setFlightError("Please select a return date for round trip.");
+          setLoadingFlights(false);
+          return;
+        }
+        params.returnDate = returnDate;
       }
-      try {
-        const dep = await axios.get('http://localhost:5000/api/flights', {
-          params: { origin, destination, departureDate, adults, children }
-        });
-        setFlightResults(dep.data.data?.slice(0, 10) || []);
-        const ret = await axios.get('http://localhost:5000/api/flights', {
-          params: {
-            origin: destination,    
-            destination: origin,
-            departureDate: returnDate,
-            adults, children
-          }
-        });
-        setReturnResults(ret.data.data?.slice(0, 10) || []);
-      } catch (err) {
-        setError('Flight fetch failed: ' + (err.response?.data?.error || err.message));
-      }
-      setLoadingFlight(false);
+      const res = await axios.get("/api/flights", { params });
+      setFlightResults(res.data?.outbound || []);
+      setReturnResults(res.data?.return || []);
+    } catch (err) {
+      console.error(err);
+      setFlightError("Flight search failed.");
+    } finally {
+      setLoadingFlights(false);
     }
   }
 
-  async function fetchHotelIds(cityCode) {
-    try {
-      const res = await axios.get('http://localhost:5000/api/hotel-ids', { params: { cityCode } });
-      if (res.data?.data) return res.data.data;
-      return [];
-    } catch (err) {
-      setError('Failed to fetch hotel IDs: ' + err.message);
-      return [];
-    }
-  }
-  async function fetchHotelOffers(hotelIdsStr, checkInDate, checkOutDate) {
-    try {
-      const res = await axios.get('http://localhost:5000/api/hotels', {
-        params: { hotelIds: hotelIdsStr, checkInDate, checkOutDate },
-      });
-      return res.data.data ?? [];
-    } catch (err) {
-      setError('Hotel fetch failed: ' + (err.response?.data?.error || err.message));
-      return [];
-    }
-  }
-  async function searchHotels(e) {
+  // ===== Hotels search =====
+  async function handleHotelSearch(e) {
     e.preventDefault();
-    setError('');
-    setFullHotelList([]);
-    setHotelOffers([]);
-    setLoadingHotels(true);
-
-    const cityCodeRaw = e.target.cityCode?.value;
-    const checkInDate = e.target.checkInDate?.value;
-    const checkOutDate = e.target.checkOutDate?.value;
-    if (!cityCodeRaw) {
-      setError('Please enter a city code.');
-      setLoadingHotels(false);
-      return;
-    }
-    const cityCode = cityCodeRaw.trim().toUpperCase();
-    if (!checkInDate || !checkOutDate) {
-      setError('Please enter check-in and check-out dates.');
-      setLoadingHotels(false);
-      return;
-    }
-    if (checkOutDate <= checkInDate) {
-      setError('Check-out date must be after check-in date.');
-      setLoadingHotels(false);
-      return;
-    }
+    setHotelError("");
+    setHotelResults([]);
+    setLoadingHotel(true);
     try {
-      const hotelsFull = await fetchHotelIds(cityCode);
-      if (hotelsFull.length === 0) {
-        setError(`No hotels found for city code ${cityCode}`);
-        setLoadingHotels(false);
+      const location =
+        hotelSearchMode === "city" ? hotelCity.trim() : hotelName.trim();
+
+      if (!location || !checkInDate || !checkOutDate) {
+        setHotelError(
+          hotelSearchMode === "city"
+            ? "Please provide city and both dates."
+            : "Please provide hotel name and both dates."
+        );
+        setLoadingHotel(false);
         return;
       }
-      setFullHotelList(hotelsFull);
-      const hotelIdsStr = hotelsFull.slice(0, 50).map(h => h.hotelId).join(',');
-      const offers = await fetchHotelOffers(hotelIdsStr, checkInDate, checkOutDate);
-      setHotelOffers(offers);
+
+      // Send unified payload the backend expects
+      const res = await axios.get("/api/hotels", {
+        params: {
+          searchMode: hotelSearchMode, // "city" | "name"
+          location,                    // city name or hotel name
+          checkInDate,
+          checkOutDate,
+          adults: hotelAdults,
+          children: hotelChildren,
+          ages: childrenAges,
+        },
+      });
+
+      setHotelResults(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      setError('Hotel search error: ' + (err.message || err));
+      console.error(err);
+      setHotelError("Hotel search failed.");
+    } finally {
+      setLoadingHotel(false);
     }
-    setLoadingHotels(false);
-  }
-  function getHotelsWithOffers() {
-    const offersMap = new Map();
-    hotelOffers.forEach(offer => {
-      if (offer.hotel && offer.hotel.hotelId) {
-        offersMap.set(offer.hotel.hotelId, offer.offers || []);
-      }
-    });
-    const hotelsMerged = fullHotelList.map(hotel => ({
-      ...hotel,
-      offers: offersMap.get(hotel.hotelId) || [],
-    }));
-    hotelsMerged.sort((a, b) => (b.offers.length > 0 ? 1 : 0) - (a.offers.length > 0 ? 1 : 0));
-    return hotelsMerged.slice(0, 10);
   }
 
-  function FlightOffer({ offer }) {
-    const itinerary = offer.itineraries?.[0];
-    return (
-      <div className="flight-card">
-        <div style={{fontWeight:'600',color:'#246'}}>Flight: {offer.id}</div>
-        {itinerary?.segments.map((seg, i) => (
-          <div key={i} className="flight-segment">
-            <div>
-              <span className="flight-badge">{seg.carrierCode} {seg.number}</span>
-              &nbsp;{seg.departure.iataCode} <b>→</b> {seg.arrival.iataCode}
-            </div>
-            <div className="flight-time">
-              <span>
-                {new Date(seg.departure.at).toLocaleString()}
-                {seg.departure.terminal && <span style={{color: '#999'}}> (T{seg.departure.terminal})</span>}
-              </span>
-              {' → '}
-              <span>
-                {new Date(seg.arrival.at).toLocaleString()}
-                {seg.arrival.terminal && <span style={{color: '#999'}}> (T{seg.arrival.terminal})</span>}
-              </span>
-              &nbsp;<span className="flight-dur">{seg.duration.replace('PT','').toLowerCase()}</span>
-            </div>
-          </div>
-        ))}
-        <div className="flight-footer">
-          <span className="flight-price">{offer.price.currency === "INR" ? "₹" : offer.price.currency} {offer.price.total}</span>
-          <span style={{marginLeft:12}}>Bookable Seats: {offer.numberOfBookableSeats}</span>
-        </div>
-      </div>
-    );
-  }
-
-  function HotelOfferExtended({ hotel }) {
-    const available = hotel.offers.length > 0;
-    const hotelImg = hotel.picture || DEFAULT_HOTEL_IMG;
-    return (
-      <div className="hotel-card">
-        <img src={hotelImg} alt={hotel.name} className="hotel-image"/>
-        <div className="hotel-details">
-          <div className="hotel-head">
-            <span className="hotel-name">{hotel.name}</span>
-            <span className={"hotel-status " + (available ? "avail" : "soldout")}>
-              {available ? "AVAILABLE" : "SOLD OUT"}
-            </span>
-          </div>
-          {hotel.rating && <div style={{marginBottom:3}}><StarRating rating={hotel.rating} /></div>}
-          <div className="hotel-address">{hotel.address?.lines?.join(', ')}, {hotel.address?.cityName}</div>
-          {available ? (
-            <>
-              <div className="hotel-offers-title">{hotel.offers.length} Room Offer(s):</div>
-              {hotel.offers.map((roomOffer, idx) => (
-                <div key={idx} className="hotel-room-offer">
-                  <div>
-                    <span className="hotel-price">
-                      ₹{Number(roomOffer.price.total).toLocaleString()}
-                    </span>
-                    &nbsp; | &nbsp;
-                    {roomOffer.room?.typeEstimated?.category || "N/A"}
-                  </div>
-                  <div className="room-dates">
-                    {roomOffer.checkInDate} → {roomOffer.checkOutDate}
-                  </div>
-                  <div>Board: {roomOffer.boardType || "N/A"}</div>
-                </div>
-              ))}
-            </>
-          ) : <div className="hotel-soldout-text">No rooms available for selected dates.</div>}
-        </div>
-      </div>
-    );
+  // ===== Popular Destinations (Klook) load =====
+  async function loadPopular() {
+    setPopularError("");
+    setPopular([]);
+    setLoadingPopular(true);
+    try {
+      const res = await axios.get("/api/popular-destinations", {
+        params: { limit: 12 },
+      });
+      setPopular(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error(err);
+      setPopularError("Failed to load popular destinations.");
+    } finally {
+      setLoadingPopular(false);
+    }
   }
 
   return (
-    <div style={{ maxWidth: 800, margin: 'auto', padding: 24, fontFamily: 'Inter, Arial, sans-serif', background: '#f4f7fd' }}>
-      <h1 style={{color:'#254c7e',margin:'8px 0'}}>Trip Planner</h1>
-      <div className="app-block flight-bg">
-        <h2>Flight Search</h2>
-        <form onSubmit={searchFlights} className="search-form">
-          <div style={{display:'flex',gap:14, alignItems:'center'}}>
-            <label>
-              <input type="radio" name="flightType" checked={flightType==="oneway"}
-                onChange={()=>setFlightType("oneway")}
-                style={{verticalAlign:'middle',marginRight:4}}/>
-              One-way
-            </label>
-            <label>
-              <input type="radio" name="flightType" checked={flightType==="roundtrip"}
-                onChange={()=>setFlightType("roundtrip")}
-                style={{verticalAlign:'middle',marginRight:4}}/>
-              Round-trip
-            </label>
-          </div>
-          <input name="origin" placeholder="Origin (e.g. DEL)" required maxLength={3} autoComplete="off" />
-          <input name="destination" placeholder="Destination (e.g. BOM)" required maxLength={3} autoComplete="off" />
-          <input name="departureDate" type="date" required />
-          {flightType === "roundtrip" && (
-            <input name="returnDate" type="date" required />
+    <div className="container">
+      {/* Header */}
+      <div className="header">
+        <div className="brand">
+          <div className="brand-badge">TP</div>
+          <h1>Trip Planner</h1>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn secondary"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? "🌞 Light Mode" : "🌙 Dark Mode"}
+          </button>
+          <button className="btn secondary" onClick={loadPopular}>
+            🌍 Popular Destinations
+          </button>
+        </div>
+      </div>
+
+      <div className="app-grid">
+        {/* ===== Flights Panel ===== */}
+        <div className="panel">
+          <h2>Flight Search</h2>
+          <form onSubmit={handleFlightSearch} className="search-form search-row-4">
+            <div className="triptype-row">
+              <div className="field-label" style={{ marginBottom: 0 }}>
+                Trip type
+              </div>
+              <div className="segmented">
+                <input
+                  type="radio"
+                  id="tt-oneway"
+                  name="tripType"
+                  value="one_way"
+                  checked={tripType === "one_way"}
+                  onChange={() => setTripType("one_way")}
+                />
+                <label htmlFor="tt-oneway">One-way</label>
+                <input
+                  type="radio"
+                  id="tt-round"
+                  name="tripType"
+                  value="round_trip"
+                  checked={tripType === "round_trip"}
+                  onChange={() => setTripType("round_trip")}
+                />
+                <label htmlFor="tt-round">Round trip</label>
+              </div>
+              <div className="spacer" />
+            </div>
+
+            <div>
+              <div className="field-label">Origin</div>
+              <input
+                placeholder="e.g. DEL"
+                value={origin}
+                onChange={(e) => setOrigin(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="field-label">Destination</div>
+              <input
+                placeholder="e.g. BOM"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="field-label">Date of travel</div>
+              <input
+                type="date"
+                value={departureDate}
+                onChange={(e) => setDepartureDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="field-label">Date of return</div>
+              {tripType === "round_trip" ? (
+                <input
+                  type="date"
+                  value={returnDate}
+                  onChange={(e) => setReturnDate(e.target.value)}
+                />
+              ) : (
+                <input
+                  type="date"
+                  disabled
+                  placeholder="One-way"
+                  style={{ opacity: 0.5 }}
+                  readOnly
+                />
+              )}
+            </div>
+            <div>
+              <div className="field-label">Adults</div>
+              <input
+                type="number"
+                min={1}
+                max={6}
+                value={flightAdults}
+                onChange={(e) => setFlightAdults(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <div className="field-label">Children</div>
+              <input
+                type="number"
+                min={0}
+                max={4}
+                value={flightChildren}
+                onChange={(e) => setFlightChildren(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="search-actions">
+              <button className="btn" type="submit">
+                Search Flights
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => {
+                  setTripType("one_way");
+                  setOrigin("");
+                  setDestination("");
+                  setDepartureDate("");
+                  setReturnDate("");
+                  setFlightAdults(1);
+                  setFlightChildren(0);
+                  setFlightResults([]);
+                  setReturnResults([]);
+                  setFlightError("");
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </form>
+
+          {loadingFlights && <div className="muted">Loading flights…</div>}
+          {flightError && <div className="error">{flightError}</div>}
+
+          {flightResults.length > 0 && (
+            <div className="list grid-auto">
+              {flightResults.map((f, i) => (
+                <div className="card" key={`dep-${i}`}>
+                  {f.airlineName && (
+                    <div className="muted" style={{ fontWeight: 700, marginBottom: 6 }}>
+                      {f.airlineName}
+                    </div>
+                  )}
+                  <div className="card-top">
+                    <div className="row chips">
+                      <span className="badge">{f.flight}</span>
+                      <span className="pill">
+                        {f.from} → {f.to}
+                      </span>
+                      <span className="pill">Duration: {f.duration}</span>
+                    </div>
+                    <div className="price">{f.currency || "INR"} {f.price}</div>
+                  </div>
+                  <div className="row muted">
+                    <span>Depart: {fmt(f.departAt)}</span>
+                    <span>Arrive: {fmt(f.arriveAt)}</span>
+                    {f.bookableSeats != null && <span>Seats: {f.bookableSeats}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-          <label style={{margin:'0 7px'}}>Adults
-            <select name="adults" value={flightForm.adults} onChange={handleFlightFormChange} style={{marginLeft:5}}>
-              {[1,2,3,4,5,6].map(n=> <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label style={{margin:'0 7px'}}>Children
-            <select name="children" value={flightForm.children} onChange={handleFlightFormChange} style={{marginLeft:5}}>
-              {[0,1,2,3,4].map(n=><option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <button type="submit" className="search-btn">Search Flights</button>
-        </form>
-        {loadingFlight && <Spinner />}
-        {error && <div className="error">{error}</div>}
 
-        {flightResults && flightResults.length > 0 && (
-          <>
-          <h3 style={{marginTop:24}}>Top 10 Departure {flightType==="roundtrip"?'':'Flights'}</h3>
-          <div className="flight-list">
-            {flightResults.map(offer => (
-              <FlightOffer key={offer.id} offer={offer} />
-            ))}
+          {returnResults.length > 0 && (
+            <>
+              <div className="divider" />
+              <div className="muted">Return flights</div>
+              <div className="list grid-auto">
+                {returnResults.map((f, i) => (
+                  <div className="card" key={`ret-${i}`}>
+                    {f.airlineName && (
+                      <div className="muted" style={{ fontWeight: 700, marginBottom: 6 }}>
+                        {f.airlineName}
+                      </div>
+                    )}
+                    <div className="card-top">
+                      <div className="row chips">
+                        <span className="badge">{f.flight}</span>
+                        <span className="pill">
+                          {f.from} → {f.to}
+                        </span>
+                        <span className="pill">Duration: {f.duration}</span>
+                      </div>
+                      <div className="price">{f.currency || "INR"} {f.price}</div>
+                    </div>
+                    <div className="row muted">
+                      <span>Depart: {fmt(f.departAt)}</span>
+                      <span>Arrive: {fmt(f.arriveAt)}</span>
+                      {f.bookableSeats != null && <span>Seats: {f.bookableSeats}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ===== Hotels Panel ===== */}
+        <div className="panel">
+          <h2>Hotel Search</h2>
+
+          {/* Mode toggle */}
+          <div style={{ marginBottom: 12 }}>
+            <div className="field-label" style={{ marginBottom: 6 }}>Search mode</div>
+            <div className="segmented">
+              <input
+                type="radio"
+                id="hs-city"
+                name="hotelSearchMode"
+                value="city"
+                checked={hotelSearchMode === "city"}
+                onChange={() => setHotelSearchMode("city")}
+              />
+              <label htmlFor="hs-city">By City</label>
+
+              <input
+                type="radio"
+                id="hs-name"
+                name="hotelSearchMode"
+                value="name"
+                checked={hotelSearchMode === "name"}
+                onChange={() => setHotelSearchMode("name")}
+              />
+              <label htmlFor="hs-name">By Name</label>
+            </div>
           </div>
-          </>
-        )}
 
-        {flightType==="roundtrip" && returnResults && returnResults.length > 0 && (
-          <>
-            <h3 style={{marginTop:24}}>Top 10 Return Flights</h3>
-            <div className="flight-list">
-              {returnResults.map(offer => (
-                <FlightOffer key={offer.id} offer={offer} />
+          <form onSubmit={handleHotelSearch} className="search-form search-row-3">
+            {hotelSearchMode === "city" ? (
+              <div>
+                <div className="field-label">City</div>
+                <input
+                  placeholder="e.g. New Delhi"
+                  value={hotelCity}
+                  onChange={(e) => setHotelCity(e.target.value)}
+                />
+              </div>
+            ) : (
+              <div>
+                <div className="field-label">Hotel Name</div>
+                <input
+                  placeholder="e.g. Taj Palace"
+                  value={hotelName}
+                  onChange={(e) => setHotelName(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div>
+              <div className="field-label">Check-in date</div>
+              <input
+                type="date"
+                value={checkInDate}
+                onChange={(e) => setCheckInDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="field-label">Check-out date</div>
+              <input
+                type="date"
+                value={checkOutDate}
+                onChange={(e) => setCheckOutDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="field-label">Adults</div>
+              <input
+                type="number"
+                min={1}
+                max={6}
+                value={hotelAdults}
+                onChange={(e) => setHotelAdults(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <div className="field-label">Children</div>
+              <input
+                type="number"
+                min={0}
+                max={4}
+                value={hotelChildren}
+                onChange={(e) => setHotelChildren(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <div className="field-label">Children ages</div>
+              <input
+                placeholder="e.g. 4,6"
+                value={childrenAges}
+                onChange={(e) => setChildrenAges(e.target.value)}
+              />
+            </div>
+
+            <div className="search-actions">
+              <button className="btn" type="submit">
+                Search Hotels
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => {
+                  setHotelCity("");
+                  setHotelName("");
+                  setCheckInDate("");
+                  setCheckOutDate("");
+                  setHotelAdults(2);
+                  setHotelChildren(0);
+                  setChildrenAges("");
+                  setHotelResults([]);
+                  setHotelError("");
+                  setHotelSearchMode("city");
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </form>
+
+          {loadingHotel && <div className="muted">Loading hotels…</div>}
+          {hotelError && <div className="error">{hotelError}</div>}
+
+          {hotelResults.length > 0 && (
+            <div className="list grid-auto">
+              {hotelResults.map((h, idx) => (
+                <div className="card" key={idx}>
+                  <div className="card-top">
+                    <div className="row">
+                      <div className="hotel-name">{h.name}</div>
+                      <span className="pill">{h.duration}</span>
+                    </div>
+                    <div className="price">{h.price}</div>
+                  </div>
+                  <div className="muted">{h.person_details}</div>
+                </div>
               ))}
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </div>
 
-      <div className="app-block hotel-bg">
-        <h2>Hotel Search</h2>
-        <form onSubmit={searchHotels} className="search-form">
-          <input name="cityCode" placeholder="City Code (e.g. BOM)" required maxLength={3} autoComplete="off" />
-          <input name="checkInDate" type="date" required />
-          <input name="checkOutDate" type="date" required />
-          <button type="submit" className="search-btn">Search Hotels</button>
-        </form>
-        {loadingHotels && <Spinner />}
-        {error && <div className="error">{error}</div>}
-        {fullHotelList.length === 0 && !loadingHotels && <div>No hotels found.</div>}
-        {fullHotelList.length > 0 && (
-          <>
-            <h3 style={{marginTop:24}}>Top 10 Hotels in City</h3>
-            <div className="hotel-list">
-              {getHotelsWithOffers().map(hotel => (
-                <HotelOfferExtended key={hotel.hotelId} hotel={hotel} />
+        {/* ===== Popular Destinations Panel (Klook) ===== */}
+        <div className="panel">
+          <h2>Popular Destinations</h2>
+          {loadingPopular && <div className="muted">Loading…</div>}
+          {popularError && <div className="error">{popularError}</div>}
+          {popular.length > 0 && (
+            <div className="list grid-auto">
+              {popular.map((p, idx) => (
+                <div className="card" key={idx}>
+                  {p.image && (
+                    <img
+                      src={p.image}
+                      alt={p.name || "Destination"}
+                      style={{ width: "100%", borderRadius: 4, marginBottom: 8 }}
+                    />
+                  )}
+                  <div className="hotel-name">{p.name || "Destination"}</div>
+                  {p.tagline && <div className="muted">{p.tagline}</div>}
+                  {p.link && (
+                    <a
+                      className="btn secondary"
+                      href={p.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ marginTop: 8 }}
+                    >
+                      View on Klook
+                    </a>
+                  )}
+                </div>
               ))}
             </div>
-          </>
-        )}
+          )}
+          {(!loadingPopular && !popularError && popular.length === 0) && (
+            <div className="muted">Click “Popular Destinations” in the header to load.</div>
+          )}
+        </div>
       </div>
-
-      {/* Inline CSS styles */}
-      <style>{`
-        .app-block { background: #fff; border-radius: 14px; margin-bottom: 32px; box-shadow: 0 3px 12px #0001; padding: 24px; }
-        .hotel-bg { background: linear-gradient(136deg,#b8d8fa 0,#eaf2fd 80%); }
-        .flight-bg { background: linear-gradient(137deg,#e6f3f6 0,#cefaee 80%); }
-        .search-form { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; align-items:center;}
-        input[type="text"], input[type="date"], input, select { padding: 6px 10px; border: 1px solid #bbb; border-radius: 6px; background: #fafdff; font-size: 16px;}
-        .search-btn { padding: 6px 22px; background: #246ade; color: #fff; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; transition: background .2s; }
-        .search-btn:hover { background: #193c60; }
-        .flight-list { display: flex; flex-direction: column; gap: 18px; }
-        .flight-card { background: #fafcff; border-radius: 8px; box-shadow: 0 1px 5px #0002; padding: 16px 20px;}
-        .flight-segment { font-size: 15px; margin-bottom: 2px;}
-        .flight-badge { background: #2dcab6; color: #fff; font-size:13px; font-weight:600; border-radius: 4px; padding: 2px 8px; margin-right: 7px;}
-        .flight-footer { margin-top: 2px; font-size: 16px; display:flex; gap:10px; align-items:center }
-        .flight-dur { color: #47a9f0; font-size: 13px; margin-left: 9px;}
-        .flight-price { font-weight: bold; font-size: 16px; color: #226fcf; background:#e6f7ff; padding:2.5px 8px; border-radius:5px;}
-        .hotel-list { display: flex; flex-direction: column; gap: 20px; margin-top:8px; }
-        .hotel-card { display:flex; background: #fafdff; border-radius:11px; box-shadow: 0 1px 6px #0002; overflow:hidden; min-height:116px;}
-        .hotel-image { width: 120px; height: 98px; object-fit:cover; border-radius:11px 0 0 11px;}
-        .hotel-details { flex:1; padding: 9px 17px 7px 15px; display:flex; flex-direction:column; justify-content:center;}
-        .hotel-head { display:flex; align-items:center; gap:10px; margin-bottom:2.5px;}
-        .hotel-name { font-size: 18px; font-weight: bold; color:#193c60;}
-        .hotel-status { font-size:11px; font-weight: bold; border-radius:5px; padding:2.5px 9px; margin-left:5px; letter-spacing:1px;}
-        .hotel-status.avail { background:#2eedaf1a; color:#1cbf7a;}
-        .hotel-status.soldout { background:#eabfcf; color: #a54063; }
-        .hotel-address { font-size: 14px; color: #888; margin-bottom: 7px; }
-        .hotel-offers-title { font-size:14px; color:#277; font-weight: bold; margin-bottom:3px; margin-top:2px;}
-        .hotel-room-offer { background: #ebfaf2; border-radius:7px; margin-bottom:8px; padding: 6px 9px 5px 9px; font-size: 15px;}
-        .hotel-price { color: #37a807; background: #d2f7ce; border-radius:3px; padding:1px 8px; margin-right:7px; font-weight:bold;}
-        .room-dates { color: #258af7; font-size: 13px; margin:3px 0;}
-        .hotel-soldout-text { color: #b17f8b; margin:9px 0 0 2px; font-weight:600;}
-        .error { color: #fff; background: #e64141e0; padding: 9px 16px; border-radius: 6px; margin-bottom: 16px; }
-        @media (max-width:600px) {
-          .app-block { padding:9px }
-          .hotel-card, .flight-card { flex-direction:column; align-items:stretch; }
-          .hotel-image { width: 100%; height:80px; border-radius:11px 11px 0 0;}
-        }
-      `}</style>
     </div>
   );
 }
-
-export default App;
