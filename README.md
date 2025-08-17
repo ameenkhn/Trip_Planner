@@ -170,46 +170,6 @@ Frontend runs on http://localhost:3000
 
 ***
 
-## Troubleshooting
-
-- Pylance “Import bs4 could not be resolved”
-  - Select the correct Python interpreter in the editor.
-  - Install: `python -m pip install beautifulsoup4`
-  - Reload the window.
-
-- Playwright errors / empty results
-  - Ensure: `python -m playwright install`
-  - Temporarily set headless to false in Python to observe behavior.
-  - Check backend/ for any saved `*_fail.html`/`*.png` to inspect actual DOM.
-
-- INR not showing for flights
-  - Confirm `currencyCode: "INR"` is in backend flight requests.
-  - Frontend displays `f.currency` returned by API.
-
-- Hotels “by name” not prioritizing the right hotel
-  - Ensure `searchMode=name` and `location=` are sent.
-  - In scraper, sort by exact name match or exit early when found.
-
-***
-
-## Security and Ethics
-
-- Do not overload external sites. Use reasonable request frequency and consider caching.
-- Respect terms of service; this project is for educational/demo purposes.
-- Keep API keys in .env, never commit secrets.
-
-***
-
-## Roadmap
-
-- Add filters for hotels (price, stars) and client-side sorting.
-- Server-side caching (e.g., Redis) for scrapers to reduce latency and rate-limit.
-- Switch to production Amadeus environment.
-- Optional proxy/stealth browser for more stable Klook scraping.
-- Pagination / “Load more” for all three panels.
-
-***
-
 ## Scripts (convenience)
 
 Backend:
